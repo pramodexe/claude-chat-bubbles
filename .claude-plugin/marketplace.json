@@ -1,0 +1,16 @@
+{
+  "name": "claude-chat-bubbles",
+  "owner": {
+    "name": "pramodexe"
+  },
+  "metadata": {
+    "description": "Your prompts as WhatsApp-style chat bubbles in Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "chat-bubbles",
+      "source": "./",
+      "description": "Shows your prompts as WhatsApp-style chat bubbles in the Claude CLI."
+    }
+  ]
+}

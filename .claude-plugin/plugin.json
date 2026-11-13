@@ -1,6 +1,6 @@
 {
   "name": "chat-bubbles",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Shows your prompts as WhatsApp-style chat bubbles in the Claude CLI",
   "author": {
     "name": "pramodexe"

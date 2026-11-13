@@ -42,8 +42,56 @@ const wrap = (text: string, width: number): string[] => {
   return out
 }
 
+// When each prompt was sent, kept in the plugin's store so the times survive
+// restarts and resumed sessions. Capped to the newest MAX.
+const SENT_KEY = 'sent'
+const MAX = 3000
+type Sent = Record<string, number>
+let sent: Sent | undefined
+
+// The transcript row's id and the id its drawing carries share only their
+// first four groups (the drawing's last group is zeroed), so key by those.
+const idKey = (id: string) => id.split('-').slice(0, 4).join('-')
+
+const normalize = (raw: unknown): Sent => {
+  const out: Sent = {}
+  for (const [id, t] of Object.entries((raw ?? {}) as Sent)) out[idKey(id)] = t
+  return out
+}
+
+const loadSent = async (get: () => Promise<unknown>) => (sent ??= normalize(await get()))
+
+const two = (n: number) => String(n).padStart(2, '0')
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+// "3:15 PM" today, "14 Nov, 3:15 PM" on another day.
+const formatTime = (ms: number, nowMs: number) => {
+  const d = new Date(ms)
+  const now = new Date(nowMs)
+  const h = d.getHours()
+  const time = `${h % 12 || 12}:${two(d.getMinutes())} ${h < 12 ? 'AM' : 'PM'}`
+  const sameDay =
+    d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  return sameDay ? time : `${d.getDate()} ${MONTHS[d.getMonth()]}, ${time}`
+}
+
 export const register: Register = on => {
-  on('ui.render', { component: 'UserMessage' }, ($, e, next) => {
+  // Note the time each typed prompt is saved to the conversation.
+  on('session.append', { door: 'prompt' }, async ($, e, next) => {
+    const result = await next(e)
+    if (!e.agentId) {
+      // Re-read first: other Claude Code windows write the same store.
+      const table = (sent = { ...normalize(await $.store.get(SENT_KEY)), ...(sent ?? {}) })
+      table[idKey(e.uuid)] = await $.clock.now()
+      const ids = Object.keys(table)
+      if (ids.length > MAX) for (const id of ids.slice(0, ids.length - MAX)) delete table[id]
+      await $.store.set(SENT_KEY, table)
+      $.ui.invalidate('ui.render')
+    }
+    return result
+  })
+
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
     if (e.surface !== 'terminal' || !OWN.has(e.props.origin.kind) || e.props.from) {
       return next(e)
     }
@@ -57,7 +105,7 @@ export const register: Register = on => {
     const columns = e.viewport?.columns ?? 80
     const maxInner = Math.max(12, Math.floor(columns * 0.75) - PAD_X * 2 - 4)
     const lines = wrap(text, maxInner)
-    const inner = Math.max(len(COPY), ...lines.map(len))
+    const inner = Math.max(1, ...lines.map(len))
     const width = inner + PAD_X * 2
     const pad = ' '.repeat(PAD_X)
 
@@ -69,22 +117,18 @@ export const register: Register = on => {
     const fill = (s: string) => pad + s + ' '.repeat(inner - len(s)) + pad
     const blank = ' '.repeat(width)
 
+    const at = (await loadSent(() => $.store.get(SENT_KEY)))[idKey(e.requestId)]
+    const time = at === undefined ? undefined : formatTime(at, await $.clock.now())
+
     return (
-      <Box flexDirection="row" justifyContent="flex-end" width="100%" marginTop={1}>
+      <Box flexDirection="column" width="100%" marginTop={1}>
+      <Box flexDirection="row" justifyContent="flex-end" width="100%">
         <Box flexDirection="column">
           {/* top padding row */}
           <Text backgroundColor={BUBBLE}>{blank}</Text>
           {lines.map((l, i) => (
             <Text key={`l${i}`} color={TEXT} backgroundColor={BUBBLE}>{fill(l)}</Text>
           ))}
-          {/* copy button, bottom-right inside the bubble */}
-          <Box flexDirection="row">
-            <Text backgroundColor={BUBBLE}>{' '.repeat(Math.max(0, width - len(COPY) - PAD_X))}</Text>
-            <Button key={`copy-${hash(text)}`} plain label={COPY} onPress={copy}>
-              <Text color={MUTED} backgroundColor={BUBBLE}>{COPY}</Text>
-            </Button>
-            <Text backgroundColor={BUBBLE}>{pad}</Text>
-          </Box>
           {/* bottom padding row */}
           <Text backgroundColor={BUBBLE}>{blank}</Text>
         </Box>
@@ -92,6 +136,14 @@ export const register: Register = on => {
         <Box flexDirection="column" alignSelf="flex-start">
           <Text color={BUBBLE}>◤</Text>
         </Box>
+      </Box>
+      {/* under the bubble, outside it: time sent, then the copy button */}
+      <Box flexDirection="row" justifyContent="flex-end" width="100%" paddingRight={1}>
+        {time && <Text dimColor>{time}  </Text>}
+        <Button key={`copy-${hash(text)}`} plain label={COPY} onPress={copy}>
+          <Text color={MUTED}>{COPY}</Text>
+        </Button>
+      </Box>
       </Box>
     )
   })

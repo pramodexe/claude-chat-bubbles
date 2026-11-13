@@ -2,7 +2,9 @@
 
 Makes Claude Code feel more like a chat app: every prompt you send shows up as a green, WhatsApp-style chat bubble on the right side of the chat, with a little tail.
 
-Each bubble has a **⧉ copy** button. Click it to copy that prompt.
+Under each bubble, on the right, you see the time you sent the prompt and a **⧉ copy** button. Click it to copy that prompt.
+
+Times are saved, so they stay after a restart or when you resume a session. Prompts sent before you installed the mod have no time.
 
 Works in **Claude Code (CLI)**, the terminal version.
 
